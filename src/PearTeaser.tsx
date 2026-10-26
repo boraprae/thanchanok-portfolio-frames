@@ -13,7 +13,8 @@ import {
   random,
   Html5Audio,
 } from "remotion";
-import { ding, mouseClick, uiSwitch, whip, whoosh } from "@remotion/sfx";
+import { mouseClick, uiSwitch, whip, whoosh } from "@remotion/sfx";
+import VO_FRAMES from "./voiceover-frames.json";
 
 // ==========================================
 // Timing helpers
@@ -414,13 +415,19 @@ const HELLO_RUN_BTN = {
 // หน้าต่างจางหาย → โลโก้ลูกแพร์เด้งกลางจอ → รูปลูกแพร์ขยายเต็มจอ = เปิดฉาก prompt
 const LOGO_POP_AT = HELLO_EXIT + 6;
 const LOGO_POP_SIZE = 150;
-const LAUNCH_AT = LOGO_POP_AT + 10;
-const LAUNCH_GROW = 18;
+// เริ่มขยายตอนโลโก้ยังเด้งอยู่ (ไม่มีช่วงหยุดนิ่งคั่น)
+const LAUNCH_AT = LOGO_POP_AT + 6;
+const LAUNCH_GROW = 30;
+// ขยายแบบ log-scale (ความเร็วซูมสม่ำเสมอในสายตา) + ease ทั้งต้นและท้าย จึงไม่หยุดกึกตอนคลุมจอ
 const launchPearSize = (t: number) =>
-  interpolate(t, [0, LAUNCH_GROW], [LOGO_POP_SIZE, 9000], {
-    ...CLAMP,
-    easing: Easing.bezier(0.55, 0, 0.85, 0.35),
-  });
+  LOGO_POP_SIZE *
+  Math.pow(
+    9000 / LOGO_POP_SIZE,
+    interpolate(t, [0, LAUNCH_GROW], [0, 1], {
+      ...CLAMP,
+      easing: Easing.inOut(Easing.quad),
+    }),
+  );
 
 const MouseCursor: React.FC<{ press: number; style?: React.CSSProperties }> = ({
   press,
@@ -810,7 +817,7 @@ const PromptScene: React.FC = () => {
         style={{
           background:
             "linear-gradient(160deg, #a5f3fc 0%, #38bdf8 45%, #2563eb 100%)",
-          opacity: 1 - progress(frame, 2, 16, EASE),
+          opacity: 1 - progress(frame, 4, LAUNCH_GROW - 4, EASE),
         }}
       />
       <AbsoluteFill
@@ -1017,13 +1024,13 @@ const IdeaNameScene: React.FC = () => {
 
       <AbsoluteFill className="flex items-center justify-center">
         <div
-          className="font-bold tracking-tight bg-gradient-to-r from-violet-300 via-indigo-400 to-sky-400 bg-clip-text text-transparent"
+          className="font-bold tracking-tight text-white"
           style={{
             fontSize: 210,
             lineHeight: 1.2,
             opacity: wordFade * (1 - wordOut),
             transform: `scale(${mix(wordIn, 1.8, 1) * mix(wordOut, 1, 0.35)})`,
-            filter: `blur(${mix(wordIn, 8, 1.5) + wordOut * 24}px) drop-shadow(0 0 30px rgba(129,140,248,0.6))`,
+            filter: `blur(${mix(wordIn, 8, 0) + wordOut * 24}px) drop-shadow(0 0 36px rgba(165,180,252,0.75))`,
           }}
         >
           {KEYWORD}
@@ -1068,16 +1075,21 @@ const ROLE_LABELS = [
   "System Analysis",
   "UX/UI Designer",
   "Software Developer",
+  "QA Engineer",
   "AI Forward Deployed Engineer",
 ];
 const ROLE_STEP = 1050;
-const ROLE_NODES = ROLE_LABELS.map((label, i) => ({
-  x: i * ROLE_STEP,
-  y: i % 2 === 0 ? 40 : -40,
-  label,
-  tag: i === ROLE_LABELS.length - 1 ? `0${i + 1} — Now` : `0${i + 1}`,
-  above: i % 2 === 0,
-}));
+// สลับบน/ล่างนับจากตำแหน่งสุดท้าย — ตำแหน่งสุดท้าย (hero) อยู่ด้านบนเสมอ ไม่ว่าจะมีกี่ตำแหน่ง
+const ROLE_NODES = ROLE_LABELS.map((label, i) => {
+  const fromLast = ROLE_LABELS.length - 1 - i;
+  return {
+    x: i * ROLE_STEP,
+    y: fromLast % 2 === 0 ? 40 : -40,
+    label,
+    tag: fromLast === 0 ? `0${i + 1} — Now` : `0${i + 1}`,
+    above: fromLast % 2 === 0,
+  };
+});
 
 const cubicAt = (a: Pt, b: Pt, c: Pt, d: Pt, t: number): Pt => {
   const u = 1 - t;
@@ -1151,20 +1163,24 @@ const ROLE_SEG_TIMING = ROLE_SEGMENTS.map((_, i): [number, number] => [
 ]);
 const ROLE_LAST = ROLE_TIMING[ROLE_TIMING.length - 1].dot;
 // ตำแหน่งสุดท้าย (FDE) ค้างให้ดูนานกว่าตำแหน่งอื่น ก่อนถอยกล้องดูภาพรวม
+// ค้างจนเสียงพากย์ "…as a forward deployed engineer." (07-roles-c) พูดจบ ก่อนเปลี่ยนฉาก
 const ROLE_FINAL = {
   ring: [20, 42],
-  overview: [50, 74],
-  exit: [86, 102],
+  overview: [66, 90],
+  exit: [112, 128],
 } as const;
+const ROLES_CROSSFADE = 20;
 const ROLES_DURATION = ROLE_LAST + ROLE_FINAL.exit[1] + 2;
 const LAST_ROLE_X = ROLE_NODES[ROLE_NODES.length - 1].x;
-const OVERVIEW = { x: LAST_ROLE_X / 2 + 280, scale: 0.33 };
+// ถอยกล้องให้เห็นทุกตำแหน่ง: เส้นทั้งเส้นกว้าง ≈1400px บนจอ ไม่ว่าจะมีกี่ตำแหน่ง
+const OVERVIEW = { x: LAST_ROLE_X / 2 + 280, scale: 1400 / LAST_ROLE_X };
 
 const RolesPathScene: React.FC = () => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
 
-  const bgIn = progress(frame, 0, 10, EASE_OUT);
+  // ค่อย ๆ ทับพื้นม่วงของฉากชื่อ (ฉากชื่อยังเล่นต่อด้านล่างจนครบ ROLES_CROSSFADE)
+  const bgIn = progress(frame, 0, ROLES_CROSSFADE, EASE);
   const lead = progress(frame, 0, 16, EASE_OUT);
   const segP = ROLE_SEG_TIMING.map(([a, b]) => progress(frame, a, b, EASE));
   const ring = progress(
@@ -1438,7 +1454,7 @@ const RolesPathScene: React.FC = () => {
 };
 
 // ==========================================
-// SCENE 4: pill เรืองแสง → ขยายเป็น Glass IDE → หดเป็นการ์ดผลงาน
+// SCENE 4: pill เรืองแสง → ขยายเป็น Glass IDE → ข้อความจบแล้ว IDE จางหาย เปิดฉากผลงานด้านหลัง
 // ==========================================
 const IDE = { w: 1550, h: 820 };
 const CARD = { w: 820, h: 480, step: 880 };
@@ -1461,6 +1477,9 @@ const CODE_LINES = [
   `};`,
 ];
 const TAGLINE = "from problem to production";
+// ข้อความขึ้นครบ + เสียงพากย์ "From problem to production." (08-ide, เริ่มเฟรม 80) พูดจบ
+// → IDE จางออก ฉากผลงานเริ่มด้านหลังพร้อมกัน (ไม่หดกลับเป็นภาพเดิม)
+const IDE_HANDOFF = 140;
 
 const IDEScene: React.FC = () => {
   const frame = useCurrentFrame();
@@ -1473,17 +1492,16 @@ const IDEScene: React.FC = () => {
   });
   const widen = progress(frame, 12, 32, EASE);
   const tall = progress(frame, 30, 54, EASE);
-  const shrink = progress(frame, 124, 156, EASE);
+  const exit = progress(frame, IDE_HANDOFF, IDE_HANDOFF + 20, EASE);
 
-  const w = mix(shrink, mix(widen, 96, IDE.w), CARD.w);
-  const h = mix(shrink, mix(tall, mix(widen, 34, 56), IDE.h), CARD.h);
-  const radius = Math.min(h / 2, mix(shrink, 24, 16));
+  const w = mix(widen, 96, IDE.w);
+  const h = mix(tall, mix(widen, 34, 56), IDE.h);
+  const radius = Math.min(h / 2, 24);
 
   const chromeIn = progress(frame, 22, 34);
   const bodyIn = progress(frame, 44, 58);
-  const previewIn = progress(frame, 60, 76, EASE_OUT);
-  const coverIn = progress(frame, 122, 140);
-  const dim = progress(frame, 78, 90) * (1 - progress(frame, 112, 124));
+  const previewIn = progress(frame, 58, 80, EASE);
+  const dim = progress(frame, 78, 90);
 
   return (
     <AbsoluteFill>
@@ -1495,7 +1513,8 @@ const IDEScene: React.FC = () => {
           width: w,
           height: h,
           borderRadius: radius,
-          transform: `scale(${pillIn})`,
+          opacity: 1 - exit,
+          transform: `scale(${pillIn * mix(exit, 1, 0.94)})`,
           background: `linear-gradient(90deg, rgba(37,99,235,${1 - widen}), rgba(56,189,248,${1 - widen})), rgba(15,23,42,${0.75 * widen})`,
           border: "1px solid rgba(255,255,255,0.2)",
           backdropFilter: "blur(24px)",
@@ -1583,13 +1602,6 @@ const IDEScene: React.FC = () => {
             </div>
           </div>
         </div>
-
-        {/* ตอนหด: preview ขยายเต็มหน้าต่าง กลายเป็นการ์ดใบแรกของฉากถัดไป */}
-        <Img
-          src={staticFile("home-portfolio.jpg")}
-          className="absolute inset-0 w-full h-full object-cover"
-          style={{ opacity: coverIn }}
-        />
       </div>
 
       {/* ข้อความ 3D ลอยทับ IDE (เหมือน "in any direction") */}
@@ -1603,8 +1615,8 @@ const IDEScene: React.FC = () => {
             fontSize: 132,
             whiteSpace: "pre",
             transform: "rotateY(-16deg) rotateX(8deg)",
-            opacity: 1 - progress(frame, 112, 122),
-            filter: `blur(${progress(frame, 112, 122) * 16}px)`,
+            opacity: 1 - progress(frame, IDE_HANDOFF, IDE_HANDOFF + 10),
+            filter: `blur(${progress(frame, IDE_HANDOFF, IDE_HANDOFF + 10) * 16}px)`,
           }}
         >
           {[...TAGLINE].map((ch, j) => {
@@ -1634,12 +1646,13 @@ const IDEScene: React.FC = () => {
 
 // ==========================================
 // SCENE 5: วงเล็บปีกกา { } + สายพานการ์ดผลงาน → การ์ดกลายเป็นช่อง grid
+// เริ่มจากผลงานชิ้นถัดไป — Portfolio อยู่ใน preview ของ IDE แล้ว ไม่ซ้ำ
 // ==========================================
 const PROJECTS = [
   {
-    title: "Portfolio & Identity",
-    subtitle: "Thought • System • Experience",
-    img: "home-portfolio.jpg",
+    title: "Expedition 26",
+    subtitle: "Clair Obscur–inspired Frontend Portfolio",
+    img: "home-expedition.png",
     type: "wide" as const,
   },
   {
@@ -1664,10 +1677,12 @@ const PROJECTS = [
 ];
 const GRID_CELL = { w: 900, h: 300 };
 const TRACK_STEPS: [number, number][] = [
-  [30, 46],
-  [64, 80],
-  [98, 114],
+  [44, 60],
+  [90, 106],
+  [136, 152],
 ];
+// การ์ดใบสุดท้ายค้าง → ใบอื่นจางออก แล้วกลายเป็นช่อง grid
+const SHOW_OUT = 184;
 
 const SplitBackground: React.FC<{ opacity?: number }> = ({ opacity = 1 }) => (
   <AbsoluteFill style={{ opacity, flexDirection: "row" }}>
@@ -1717,13 +1732,13 @@ const ShowcaseScene: React.FC = () => {
   const bracketGap = mix(bracketOpen, 380, 480);
   const bracketOpacity = Math.min(
     progress(frame, 4, 14),
-    1 - progress(frame, 130, 140),
+    1 - progress(frame, SHOW_OUT, SHOW_OUT + 10),
   );
   const neighborsIn = progress(frame, 4, 18);
-  const neighborsOut = progress(frame, 130, 144, EASE_IN);
+  const neighborsOut = progress(frame, SHOW_OUT, SHOW_OUT + 14, EASE_IN);
   const lineIn = progress(frame, 0, 18, EASE_OUT);
-  const gridIn = progress(frame, 138, 160, EASE_OUT);
-  const morph = progress(frame, 144, 170, EASE);
+  const gridIn = progress(frame, SHOW_OUT + 8, SHOW_OUT + 30, EASE_OUT);
+  const morph = progress(frame, SHOW_OUT + 14, SHOW_OUT + 40, EASE);
   const bgIn = progress(frame, 0, 14);
   const last = PROJECTS.length - 1;
 
@@ -1752,12 +1767,14 @@ const ShowcaseScene: React.FC = () => {
         const scale = (1 - 0.16 * a) * (isLast ? 1 : 1 - neighborsOut * 0.1);
         const opacity =
           (1 - 0.5 * a) *
-          (i === 0 ? 1 : neighborsIn) *
+          (i === 0 ? bgIn : neighborsIn) *
           (isLast ? 1 : 1 - neighborsOut);
-        const content = isLast ? 1 - progress(frame, 148, 166) : 1;
+        const content = isLast
+          ? 1 - progress(frame, SHOW_OUT + 18, SHOW_OUT + 36)
+          : 1;
         const chip =
           progress(frame, 10, 22) *
-          (isLast ? 1 - progress(frame, 140, 150) : 1);
+          (isLast ? 1 - progress(frame, SHOW_OUT + 10, SHOW_OUT + 20) : 1);
         return (
           <div
             key={proj.title}
@@ -1895,11 +1912,13 @@ const GridTextScene: React.FC = () => {
 // ==========================================
 // SCENE 7: แสงสว่างกวาดลงมา → "Let's build together." → โลโก้ปิดท้าย
 // ==========================================
-const OUTRO_WORDS = [
-  { t: "Let’s", at: 14, big: false },
-  { t: "build", at: 22, big: false },
-  { t: "together.", at: 32, big: true },
+// ขึ้นตามจังหวะเสียงพากย์ 11-together (เริ่ม outro + 12): Let's +0, build +14, together +21
+// ตำแหน่งคำคงที่ (ไม่ดันกันไปมา) — แต่ละคำลอยขึ้นจากด้านล่าง + เบลอ → ชัด
+const OUTRO_LINE1 = [
+  { t: "Let’s", at: 10 },
+  { t: "build", at: 24 },
 ];
+const OUTRO_TOGETHER = { t: "together.", at: 31 };
 
 const OutroScene: React.FC = () => {
   const frame = useCurrentFrame();
@@ -1910,7 +1929,6 @@ const OutroScene: React.FC = () => {
     wipe < 1
       ? `linear-gradient(to bottom, #000 ${wipe * 130 - 30}%, transparent ${wipe * 130}%)`
       : undefined;
-  const smallOut = progress(frame, 58, 72, EASE);
   const wordsOut = progress(frame, 76, 88, EASE_IN);
   const darkIn = progress(frame, 80, 92);
 
@@ -1931,38 +1949,57 @@ const OutroScene: React.FC = () => {
       <BrightBackground />
 
       <AbsoluteFill
-        className="flex items-baseline justify-center"
+        className="flex flex-col items-center justify-center"
         style={{
-          alignItems: "center",
           opacity: 1 - wordsOut,
           filter: `blur(${wordsOut * 16}px)`,
+          transform: `scale(${mix(progress(frame, 10, 88), 1, 1.04) + wordsOut * 0.06})`,
         }}
       >
-        <div className="flex items-baseline">
-          {OUTRO_WORDS.map((w) => {
-            const p = progress(frame, w.at, w.at + 16, EASE_OUT);
-            const gone = w.big ? 0 : smallOut;
+        <div
+          className="flex gap-[0.3em] font-medium text-white/85 tracking-tight"
+          style={{ fontSize: 72, lineHeight: 1.1 }}
+        >
+          {OUTRO_LINE1.map((w) => {
+            const p = progress(frame, w.at, w.at + 14, EASE_OUT);
             return (
               <span
                 key={w.t}
-                className={
-                  w.big
-                    ? "font-bold tracking-tight bg-gradient-to-r from-white via-sky-100 to-sky-300 bg-clip-text text-transparent"
-                    : "font-medium text-white/90"
-                }
                 style={{
                   display: "inline-block",
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  fontSize: w.big ? 168 : 76,
-                  lineHeight: 1.25,
-                  maxWidth: p * (w.big ? 900 : 320) * (1 - gone),
-                  paddingRight: w.big ? 0 : 0.28 * 76 * (1 - gone),
-                  opacity: p * (1 - gone),
-                  filter: `blur(${(1 - p) * 12}px)`,
+                  opacity: p,
+                  transform: `translateY(${(1 - p) * 36}px)`,
+                  filter: `blur(${(1 - p) * 10}px)`,
                 }}
               >
                 {w.t}
+              </span>
+            );
+          })}
+        </div>
+        <div
+          className="flex font-bold tracking-tight"
+          style={{ fontSize: 176, lineHeight: 1.15 }}
+        >
+          {[...OUTRO_TOGETHER.t].map((ch, j) => {
+            const p = progress(
+              frame,
+              OUTRO_TOGETHER.at + j * 1.4,
+              OUTRO_TOGETHER.at + j * 1.4 + 14,
+              EASE_OUT,
+            );
+            return (
+              <span
+                key={j}
+                className="bg-gradient-to-b from-white to-sky-200 bg-clip-text text-transparent"
+                style={{
+                  display: "inline-block",
+                  opacity: p,
+                  transform: `translateY(${(1 - p) * 60}px) scale(${mix(p, 0.9, 1)})`,
+                  filter: `blur(${(1 - p) * 12}px)`,
+                }}
+              >
+                {ch}
               </span>
             );
           })}
@@ -2066,21 +2103,27 @@ const AT = {
   idea: AT_IDEA,
   roles: AT_ROLES,
   ide: AT_IDE,
-  showcase: AT_IDE + 162,
-  grid: AT_IDE + 338,
-  outro: AT_IDE + 410,
+  showcase: AT_IDE + IDE_HANDOFF,
+  grid: AT_IDE + IDE_HANDOFF + 226,
+  outro: AT_IDE + IDE_HANDOFF + 298,
 };
 
 // ==========================================
-// เสียงประกอบ (@remotion/sfx) — เฟรมอ้างอิงจากจุดเริ่มของแต่ละ Sequence ด้านล่าง
+// เสียงประกอบ
+// "reference": SFX ที่แยกด้วย AI (BandIt Plus: speech/music/effects) จากคลิป
+//   "pearteaser final sfx" ที่ตัดต่อเอง → public/sfx/reference-fx.wav เล่นทั้งเรื่องตั้งแต่เฟรม 0
+//   (คลิปนั้นใช้ภาพจาก render นี้ จังหวะจึงตรงกันเฟรมต่อเฟรม — ถ้าแก้ timeline ต้องตัดต่อคลิปใหม่)
+// "library": ชุด cue เดิมจาก @remotion/sfx ด้านล่าง
 // ==========================================
+const SFX_SOURCE: "reference" | "library" = "reference";
+const REFERENCE_FX_VOLUME = 0.8;
 const TYPING_CLICKS = Array.from({ length: 9 }, (_, i) => ({
   at: AT.prompt + 102 + i * 4,
   src: mouseClick,
   volume: 0.12,
 }));
 const SFX: { at: number; src: string; volume: number }[] = [
-  { at: AT.hello + 2, src: whoosh, volume: 0.18 }, // หน้าต่างลอยขึ้น
+  // hello world
   ...Array.from({ length: 13 }, (_, i) => ({
     at: AT.hello + HELLO_TYPE.start + i * 4,
     src: mouseClick,
@@ -2088,46 +2131,111 @@ const SFX: { at: number; src: string; volume: number }[] = [
   })), // เสียงพิมพ์ใน terminal
   { at: AT.hello + HELLO_CLICK, src: mouseClick, volume: 0.55 }, // กด Run
   { at: AT.hello + HELLO_CLICK + 1, src: whoosh, volume: 0.3 }, // คลื่นกระแทก
-  { at: AT.hello + HELLO_LOAD.end, src: uiSwitch, volume: 0.3 }, // รันเสร็จ
-  { at: AT.hello + LOGO_POP_AT, src: ding, volume: 0.3 }, // โลโก้ลูกแพร์เด้งขึ้น
-  { at: AT.prompt, src: whoosh, volume: 0.5 }, // ลูกแพร์ขยายเปิดฉาก
+  { at: AT.hello + HELLO_LOAD.end, src: uiSwitch, volume: 0.6 }, // loading เต็ม 100% → Done
+  // ลูกแพร์ขยาย → prompt
+  { at: AT.prompt + 12, src: whoosh, volume: 0.35 }, // ลูกแพร์ขยายเร็วสุด
   { at: AT.prompt + 16, src: mouseClick, volume: 0.45 }, // ปุ่ม +
-  { at: AT.prompt + 32, src: uiSwitch, volume: 0.35 }, // pill Public Profile
+  { at: AT.prompt + 32, src: uiSwitch, volume: 0.35 }, // pill
   ...TYPING_CLICKS,
   { at: AT.prompt + KEYWORD_PAN.start, src: whoosh, volume: 0.2 }, // แพนกล้องไปทางขวา
-  { at: AT.prompt + KEYWORD_PUSH.start + 4, src: whoosh, volume: 0.55 }, // กล้องพุ่งเข้าคำเด่น แล้ว zoom out
-  { at: AT.idea + NAME_T.mark, src: whip, volume: 0.3 }, // โลโก้หมุนเข้า
+  // ชื่อ
+  { at: AT.idea + NAME_T.mark, src: whip, volume: 0.25 }, // โลโก้หมุนเข้า
   { at: AT.idea + NAME_T.reveal[0], src: whoosh, volume: 0.25 }, // ชื่อเลื่อนออก
-  { at: AT.roles, src: whoosh, volume: 0.35 }, // เข้าฉากเส้นตำแหน่งงาน
+  // ตำแหน่งงาน
+  { at: AT.roles, src: whoosh, volume: 0.25 },
   ...ROLE_SEG_TIMING.map(([a]) => ({
     at: AT.roles + a,
     src: whip,
     volume: 0.22,
   })), // เส้นวิ่งไปตำแหน่งถัดไป
-  { at: AT.roles + ROLE_LAST, src: ding, volume: 0.35 }, // ถึง AI Forward Deployed Engineer
+  // IDE
   { at: AT.ide, src: uiSwitch, volume: 0.4 }, // pill เรืองแสง
-  { at: AT.ide + 12, src: whoosh, volume: 0.3 }, // ขยายเป็น IDE
-  { at: AT.ide + 80, src: whoosh, volume: 0.3 }, // from problem to production
-  { at: AT.ide + 124, src: whoosh, volume: 0.3 }, // หดเป็นการ์ด
+  { at: AT.ide + 12, src: whoosh, volume: 0.3 },
+  { at: AT.ide + 80, src: whoosh, volume: 0.2 }, // from problem to production
+  // ผลงาน
   { at: AT.showcase + 4, src: whip, volume: 0.3 }, // วงเล็บกาง
   ...TRACK_STEPS.map(([a]) => ({
-    at: AT.showcase + a,
+    at: AT.showcase + a + 4,
     src: whoosh,
-    volume: 0.2,
+    volume: 0.25,
   })), // สายพานเลื่อน
   { at: AT.grid + 4, src: uiSwitch, volume: 0.25 }, // More about what's next
-  { at: AT.outro, src: whoosh, volume: 0.55 }, // แสงกวาดลงมา
-  { at: AT.outro + 84, src: whoosh, volume: 0.35 }, // โลโก้ปิดท้าย
-  { at: AT.outro + 108, src: ding, volume: 0.4 }, // ชื่อเลื่อนออก
+  // ปิดท้าย
+  { at: AT.outro, src: whoosh, volume: 0.45 }, // แสงกวาดลงมา
+  { at: AT.outro + 84, src: whoosh, volume: 0.3 }, // โลโก้ปิดท้าย
 ];
+
+// ==========================================
+// เสียงพากย์ภาษาอังกฤษ — แยกจากเพลง (public/vo/*.wav) เริ่มพร้อมข้อความบนจอ
+// เปลี่ยนเสียง: VOICE="Daniel" scripts/gen-voiceover.sh → เขียนไฟล์ใหม่ + ความยาว (voiceover-frames.json)
+// ปิดเสียงพากย์ทั้งหมด (เหลือเพลง + SFX): WITH_VOICEOVER = false
+// ==========================================
+const WITH_VOICEOVER = false; // ปิดไว้ก่อน (ไฟล์ยังอยู่ใน public/vo)
+const VO_LINES: [file: keyof typeof VO_FRAMES, at: number][] = [
+  ["01-start", AT.hello + 14], // It all starts with one line.
+  ["02-looking", AT.prompt + 62], // Looking for a builder?
+  ["03-problem", AT.prompt + 98], // Every business problem deserves a real solution.
+  ["04-meet", AT.idea + NAME_T.reveal[0]], // Meet Pear Thanchanok.
+  // ตำแหน่งงาน: เล่าเป็นประโยคเดียว แบ่ง 3 ท่อน เริ่มพร้อมจุดที่ 1, 3, 5
+  ["05-roles-a", AT.roles + ROLE_TIMING[0].label], // She can analyse the business, and the systems behind it,
+  ["06-roles-b", AT.roles + ROLE_TIMING[2].label], // design the experience, build the software, and make sure it's ready to ship,
+  ["07-roles-c", AT.roles + ROLE_TIMING[ROLE_TIMING.length - 1].label - 12], // all the way to deploying AI, as a forward deployed engineer.
+  ["08-ide", AT.ide + 80], // From problem to production.
+  ["09-work", AT.showcase + 34], // Real projects. Shipped and running.
+  ["10-next", AT.grid + 4], // And there's more to come.
+  ["11-together", AT.outro + 12], // Let's build together. (คำ together ตรงกับตอนคำใหญ่ขึ้นจอ)
+  ["12-slogan", AT.outro + 126], // Your one-stop builder. End to end.
+];
+const VOICEOVER = WITH_VOICEOVER
+  ? VO_LINES.map(([file, at]) => ({ file, at, frames: VO_FRAMES[file] }))
+  : [];
+
+// เพลงประกอบ (scripts/gen-music.py → public/music.mp3) 120 BPM บีทเข้าตอนลูกแพร์ขยาย
+// หรี่ลงระหว่างเสียงพากย์ให้ได้ยินคำพูดชัด
+const MUSIC_VOLUME = 0.5;
+const MUSIC_DUCKED = 0.22;
+const musicVolume = (frame: number) => {
+  const duck = VOICEOVER.reduce(
+    (acc, vo) =>
+      Math.max(
+        acc,
+        interpolate(
+          frame,
+          [vo.at - 6, vo.at, vo.at + vo.frames, vo.at + vo.frames + 10],
+          [0, 1, 1, 0],
+          CLAMP,
+        ),
+      ),
+    0,
+  );
+  return mix(duck, MUSIC_VOLUME, MUSIC_DUCKED);
+};
 
 const SoundEffects: React.FC = () => (
   <>
-    {SFX.map((sfx, i) => (
-      <Sequence key={i} from={sfx.at} durationInFrames={60} layout="none">
-        <Html5Audio src={sfx.src} volume={sfx.volume} />
+    <Html5Audio src={staticFile("music.mp3")} volume={musicVolume} />
+    {VOICEOVER.map((vo) => (
+      <Sequence
+        key={vo.file}
+        from={vo.at}
+        durationInFrames={vo.frames + 6}
+        layout="none"
+      >
+        <Html5Audio src={staticFile(`vo/${vo.file}.wav`)} volume={1} />
       </Sequence>
     ))}
+    {SFX_SOURCE === "reference" ? (
+      <Html5Audio
+        src={staticFile("sfx/reference-fx.wav")}
+        volume={REFERENCE_FX_VOLUME}
+      />
+    ) : (
+      SFX.map((sfx, i) => (
+        <Sequence key={i} from={sfx.at} durationInFrames={60} layout="none">
+          <Html5Audio src={sfx.src} volume={sfx.volume} />
+        </Sequence>
+      ))
+    )}
   </>
 );
 
@@ -2154,7 +2262,10 @@ export const PearTeaser: React.FC = () => {
       </Sequence>
 
       {/* 0:11.4 คำเด่น "solution" → โลโก้ → ชื่อ */}
-      <Sequence from={AT.idea} durationInFrames={NAME_T.end}>
+      <Sequence
+        from={AT.idea}
+        durationInFrames={AT.roles - AT.idea + ROLES_CROSSFADE}
+      >
         <IdeaNameScene />
       </Sequence>
 
@@ -2163,14 +2274,14 @@ export const PearTeaser: React.FC = () => {
         <RolesPathScene />
       </Sequence>
 
-      {/* 0:27.1 pill → Glass IDE → หดเป็นการ์ด */}
-      <Sequence from={AT.ide} durationInFrames={162}>
-        <IDEScene />
+      {/* 0:30.9 { } สายพานผลงาน → ช่อง grid */}
+      <Sequence from={AT.showcase} durationInFrames={AT.grid - AT.showcase}>
+        <ShowcaseScene />
       </Sequence>
 
-      {/* 0:32.5 { } สายพานผลงาน → ช่อง grid */}
-      <Sequence from={AT.showcase} durationInFrames={176}>
-        <ShowcaseScene />
+      {/* 0:27.1 pill → Glass IDE → ข้อความจบ IDE จางออก (วางทับฉากผลงานที่เริ่มด้านหลัง) */}
+      <Sequence from={AT.ide} durationInFrames={IDE_HANDOFF + 22}>
+        <IDEScene />
       </Sequence>
 
       {/* 0:38.4 More about what's next */}

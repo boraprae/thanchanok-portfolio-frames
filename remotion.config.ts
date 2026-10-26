@@ -13,3 +13,5 @@ Config.setVideoImageFormat("jpeg");
 Config.setOverwriteOutput(true);
 Config.setDefaultPremountInSeconds(2);
 Config.overrideBundlerConfig(enableTailwind);
+// Studio ใช้พอร์ต 3000 — ตัวเรนเดอร์ใช้พอร์ตแยก ไม่งั้น `remotion render` ไปเจอหน้า Studio แล้วล้ม
+Config.setRendererPort(3047);
